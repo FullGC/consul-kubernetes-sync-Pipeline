@@ -1,0 +1,43 @@
+def call() {
+
+    stage 'Create coredns config File'
+
+    CONSUL_DNS_SERVERS_ADDR = sh(
+            script: "kubectl get svc consul-sync-default-dns -o jsonpath='{.spec.clusterIP}' -n default",
+            returnStdout: true
+    ).toString()
+
+    writeFile file: '/home/ubuntu/coredns_configmap', text: """
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coredns
+  namespace: kube-system
+data:
+  Corefile: |
+    .:53 {
+        errors
+        log
+        health
+        kubernetes cluster.local 10.0.0.0/24
+        prometheus :9153
+        proxy . /etc/resolv.conf
+        cache 30
+        reload
+    }
+    consul:53 {
+        log
+        errors
+        cache 30
+        proxy . ${CONSUL_DNS_SERVERS_ADDR} {
+         # policy round_robin
+         # health_check /health:8080
+        }
+    }
+      """
+
+    configFile = readFile('/home/ubuntu/coredns_configmap')
+    echo configFile
+
+    sh 'kubectl apply -f /home/ubuntu/coredns_configmap'
+}
